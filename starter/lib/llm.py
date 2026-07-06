@@ -1,31 +1,44 @@
 import os
 import requests
-from typing import List, Dict, Any
-from lib.messages import BaseMessage, UserMessage, AIMessage, TokenUsage
+from typing import List, Optional, Dict, Any
+from pydantic import BaseModel
+from dotenv import load_dotenv
+from lib.messages import (
+    TokenUsage,
+    AIMessage,
+    BaseMessage,
+    UserMessage,
+)
 from lib.tooling import Tool
 
+# Load environment variables from .env
+load_dotenv()
+
+
 class LLM:
-    def __init__(self, model="tavily-search", temperature=0.7, api_key: str | None = None):
+    def __init__(
+        self,
+        model: str = "tavily-search",
+        temperature: float = 0.0,
+        tools: Optional[List[Tool]] = None,
+        api_key: Optional[str] = None
+    ):
         self.model = model
         self.temperature = temperature
-        # Allow explicit api_key or fallback to environment
         self.api_key = api_key or os.getenv("TAVILY_API_KEY")
         if not self.api_key:
             raise ValueError("TAVILY_API_KEY not found in environment variables")
 
         # Tavily API endpoint
         self.base_url = "https://api.tavily.com/search"
-
-        # Tools registry (optional)
-        self.tools: Dict[str, Tool] = {}
-
+        self.tools: Dict[str, Tool] = {
+            tool.name: tool for tool in (tools or [])
+        }
 
     def register_tool(self, tool: Tool):
-        """Register a tool so the agent can call it."""
         self.tools[tool.name] = tool
 
     def _convert_input(self, input: Any) -> List[BaseMessage]:
-        """Normalize input into a list of BaseMessage objects."""
         if isinstance(input, str):
             return [UserMessage(content=input)]
         elif isinstance(input, BaseMessage):
@@ -36,10 +49,8 @@ class LLM:
             raise ValueError(f"Invalid input type {type(input)}.")
 
     def invoke(self, input: str | BaseMessage | List[BaseMessage]) -> AIMessage:
-        """Send a query to Tavily API and wrap the response as an AIMessage."""
         messages = self._convert_input(input)
-        # For simplicity, just use the last user message as the query
-        query = messages[-1].content
+        query = messages[0].content  # Tavily only needs the query string
 
         headers = {"Authorization": f"Bearer {self.api_key}"}
         payload = {
@@ -56,14 +67,16 @@ class LLM:
 
         data = response.json()
         answer = data.get("answer", "")
-        results = data.get("results", [])
 
         return AIMessage(
             content=answer,
-            tool_calls=None,
-            token_usage=TokenUsage(
-                prompt_tokens=0,
-                completion_tokens=0,
-                total_tokens=0
-            )
+            tool_calls=[],
+            token_usage=None
         )
+
+
+# Example usage
+if __name__ == "__main__":
+    llm = LLM()  # will automatically pick up TAVILY_API_KEY from .env
+    result = llm.invoke("When was Pokémon Gold and Silver released?")
+    print("Answer:", result.content)
