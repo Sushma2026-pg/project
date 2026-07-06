@@ -52,6 +52,9 @@ class LLM:
         messages = self._convert_input(input)
         query = messages[0].content  # Tavily only needs the query string
 
+        if len(query) > 400:
+            query = query[:400]
+            
         headers = {"Authorization": f"Bearer {self.api_key}"}
         payload = {
             "query": query,
